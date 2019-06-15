@@ -1,19 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"text/template"
 )
+
+const redirURL = `{{.RedirectURL}}/{{if .ErrorCode}}?error={{.ErrorCode}}{{end}}{{if .ReturnURL}}&return={{.ReturnURL}}{{end}}`
 
 const html = `
 <!DOCTYPE html>
 <html>
   <head>
-    <meta http-equiv="Refresh" content="0; url={{.RedirectURL}}/?error={{.ErrorCode}}&return={{.ReturnURL}}" />
+    <meta http-equiv="Refresh" content="0; url={{.URL}}" />
   </head>
 </html>
 `
@@ -30,10 +32,6 @@ func main() {
 	if !found {
 		log.Fatal("REDIRECT_URL not set")
 	}
-	_, found = os.LookupEnv("RETURN_URL")
-	if !found {
-		log.Fatal("RETURN_URL not set")
-	}
 
 	http.HandleFunc("/", handler)
 
@@ -43,12 +41,27 @@ func main() {
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	templates := template.New("error_templates")
-	templates.New("html").Parse(html)
-	conf := redirectConf{
-		RedirectURL: os.Getenv("REDIRECT_URL"),
-		ReturnURL:   os.Getenv("RETURN_URL"),
-		ErrorCode:   strings.TrimPrefix(r.URL.EscapedPath(), "/"),
+	redirURL, err := templates.New("url").Parse(redirURL)
+	if err != nil {
+		fmt.Printf("url tmpl err: %s", err.Error())
 	}
-	fmt.Printf("Sending %s (%s) to %s/?error=%s&return=%s\n", r.Host, r.UserAgent(), conf.RedirectURL, conf.ErrorCode, conf.ReturnURL)
-	templates.Lookup("html").Execute(w, conf)
+	htmlResponse, err := templates.New("html").Parse(html)
+	if err != nil {
+		fmt.Printf("html tmpl err: %s", err.Error())
+	}
+	reqValues := r.URL.Query()
+	URLconf := redirectConf{
+		RedirectURL: os.Getenv("REDIRECT_URL"),
+		ReturnURL:   reqValues.Get("return"),
+		ErrorCode:   reqValues.Get("error"),
+	}
+	renderedURLTmpl := bytes.Buffer{}
+	redirURL.Execute(&renderedURLTmpl, URLconf)
+	fmt.Printf("Sending %s (%s) to %s\n", r.RemoteAddr, r.UserAgent(), renderedURLTmpl.String())
+	htmlConf := struct {
+		URL string
+	}{
+		URL: renderedURLTmpl.String(),
+	}
+	htmlResponse.Execute(w, htmlConf)
 }
