@@ -49,6 +49,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		ReturnURL:   os.Getenv("RETURN_URL"),
 		ErrorCode:   strings.TrimPrefix(r.URL.EscapedPath(), "/"),
 	}
-	fmt.Printf("Sending %s/?error=%s&return=%s\n", conf.RedirectURL, conf.ErrorCode, conf.ReturnURL)
+	fmt.Printf("Sending %s (%s) to %s/?error=%s&return=%s\n", r.Host, r.UserAgent(), conf.RedirectURL, conf.ErrorCode, conf.ReturnURL)
 	templates.Lookup("html").Execute(w, conf)
 }
