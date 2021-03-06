@@ -53,15 +53,17 @@ func main() {
 func redirectHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		returnScheme := r.Header.Get("X-Forwarded-Proto")
-		returnURL := r.Header.Get("X-Forwarded-Host")
-		if returnURL == "" {
-			returnURL = defaultReturnURL
+		returnHost := r.Header.Get("X-Forwarded-Host")
+		if returnHost == "" {
+			returnHost = defaultReturnURL
 		}
+
+		returnURL := returnScheme + "://" + returnHost
 
 		queryValues := r.URL.Query()
 		URLconf := redirectConf{
 			RedirectURL: redirectURL,
-			ReturnURL:   returnScheme + "://" + returnURL,
+			ReturnURL:   returnURL,
 			ErrorCode:   queryValues.Get("error"),
 		}
 
