@@ -3,22 +3,22 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"os"
-	"text/template"
 )
 
-const redirURL = `{{.RedirectURL}}/{{if .ErrorCode}}?error={{.ErrorCode}}{{end}}{{if .ReturnURL}}&return={{.ReturnURL}}{{end}}`
-
-const html = `
+const htmlResp = `
 <!DOCTYPE html>
 <html>
   <head>
-    <meta http-equiv="Refresh" content="0; url={{.URL}}" />
+    <meta http-equiv="Refresh" content="0; url=%s" />
   </head>
 </html>
 `
+
+const redirTmpl = "{{.RedirectURL}}/{{if .ErrorCode}}?error={{.ErrorCode}}{{end}}{{if .ReturnURL}}&return={{.ReturnURL}}{{end}}"
 
 type redirectConf struct {
 	RedirectURL string
@@ -27,41 +27,58 @@ type redirectConf struct {
 	ErrorCode   string
 }
 
+var (
+	redirURL         = template.Must(template.New("redirURL").Parse(redirTmpl))
+	redirectURL      string
+	defaultReturnURL string
+)
+
 func main() {
-	_, found := os.LookupEnv("REDIRECT_URL")
+	var found bool
+	redirectURL, found = os.LookupEnv("REDIRECT_URL")
 	if !found {
 		log.Fatal("REDIRECT_URL not set")
 	}
+	defaultReturnURL, found = os.LookupEnv("DEFAULT_RETURN_URL")
+	if !found {
+		log.Fatal("DEFAULT_RETURN_URL not set")
+	}
 
-	http.HandleFunc("/", handler)
+	http.HandleFunc("/", redirectHandler())
 
 	log.Printf("Serving on HTTP port: %s\n", "3000")
 	log.Fatal(http.ListenAndServe(":3000", nil))
 }
 
-func handler(w http.ResponseWriter, r *http.Request) {
-	templates := template.New("error_templates")
-	redirURL, err := templates.New("url").Parse(redirURL)
-	if err != nil {
-		fmt.Printf("url tmpl err: %s", err.Error())
+func redirectHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		// Loop over header names
+		for name, values := range r.Header {
+			// Loop over all values for the name.
+			for _, value := range values {
+				fmt.Println(name, value)
+			}
+		}
+
+		returnScheme := r.Header.Get("X-Forwarded-Proto")
+		returnURL := r.Header.Get("X-Forwarded-Host")
+		if returnURL == "" {
+			returnURL = defaultReturnURL
+		}
+
+		queryValues := r.URL.Query()
+		URLconf := redirectConf{
+			RedirectURL: redirectURL,
+			ReturnURL:   returnScheme + "://" + returnURL,
+			ErrorCode:   queryValues.Get("error"),
+		}
+
+		fmt.Printf("Sending %s (%s) to %s\n", r.RemoteAddr, r.UserAgent(), returnURL)
+		renderedURLTmpl := bytes.Buffer{}
+		redirURL.Execute(&renderedURLTmpl, URLconf)
+		fmt.Printf("redir url: %s", renderedURLTmpl.String())
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprintf(w, htmlResp, renderedURLTmpl.String())
 	}
-	htmlResponse, err := templates.New("html").Parse(html)
-	if err != nil {
-		fmt.Printf("html tmpl err: %s", err.Error())
-	}
-	reqValues := r.URL.Query()
-	URLconf := redirectConf{
-		RedirectURL: os.Getenv("REDIRECT_URL"),
-		ReturnURL:   reqValues.Get("return"),
-		ErrorCode:   reqValues.Get("error"),
-	}
-	renderedURLTmpl := bytes.Buffer{}
-	redirURL.Execute(&renderedURLTmpl, URLconf)
-	fmt.Printf("Sending %s (%s) to %s\n", r.RemoteAddr, r.UserAgent(), renderedURLTmpl.String())
-	htmlConf := struct {
-		URL string
-	}{
-		URL: renderedURLTmpl.String(),
-	}
-	htmlResponse.Execute(w, htmlConf)
 }
