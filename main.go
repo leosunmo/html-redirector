@@ -52,15 +52,6 @@ func main() {
 
 func redirectHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		// Loop over header names
-		for name, values := range r.Header {
-			// Loop over all values for the name.
-			for _, value := range values {
-				fmt.Println(name, value)
-			}
-		}
-
 		returnScheme := r.Header.Get("X-Forwarded-Proto")
 		returnURL := r.Header.Get("X-Forwarded-Host")
 		if returnURL == "" {
@@ -77,7 +68,6 @@ func redirectHandler() http.HandlerFunc {
 		fmt.Printf("Sending %s (%s) to %s\n", r.RemoteAddr, r.UserAgent(), returnURL)
 		renderedURLTmpl := bytes.Buffer{}
 		redirURL.Execute(&renderedURLTmpl, URLconf)
-		fmt.Printf("redir url: %s", renderedURLTmpl.String())
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintf(w, htmlResp, renderedURLTmpl.String())
 	}
